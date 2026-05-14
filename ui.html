@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: Inter, sans-serif;
+      font-size: 13px;
+      background: #ffffff;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .toolbar {
+      padding: 12px;
+      border-bottom: 1px solid #e5e5e5;
+      flex-shrink: 0;
+      display: flex;
+      gap: 8px;
+    }
+
+    button {
+      background: #18a0fb;
+      color: #ffffff;
+      border: none;
+      border-radius: 6px;
+      padding: 8px 20px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      flex: 1;
+    }
+
+    button:hover { background: #0d8de3; }
+    button:active { background: #0a7ecb; }
+    button:disabled { background: #c4c4c4; cursor: default; }
+
+    .error {
+      padding: 12px;
+      color: #f24822;
+      font-size: 12px;
+    }
+
+    .panels {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 0;
+    }
+
+    .item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .item:hover { background: #f5f5f5; }
+
+    .item input[type="checkbox"] {
+      flex-shrink: 0;
+      accent-color: #18a0fb;
+      width: 14px;
+      height: 14px;
+      cursor: pointer;
+    }
+
+    .item label {
+      cursor: pointer;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: #333;
+    }
+
+    .group-heading {
+      padding: 8px 12px 4px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #999;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .empty {
+      padding: 20px 12px;
+      color: #999;
+      text-align: center;
+    }
+
+    .results {
+      border-top: 1px solid #e5e5e5;
+      flex-shrink: 0;
+      max-height: 200px;
+      overflow-y: auto;
+      padding: 8px 0;
+    }
+
+    .results-heading {
+      padding: 4px 12px 6px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #999;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .result-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 5px 12px;
+      gap: 8px;
+    }
+
+    .result-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: #333;
+    }
+
+    .result-count {
+      flex-shrink: 0;
+      font-weight: 600;
+      color: #18a0fb;
+      background: #e8f4fe;
+      border-radius: 10px;
+      padding: 1px 8px;
+      font-size: 12px;
+    }
+
+    .result-count.zero {
+      color: #999;
+      background: #f0f0f0;
+    }
+
+    .result-frames {
+      padding: 0 12px 6px 12px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+
+    .frame-tag {
+      font-size: 11px;
+      background: #f0f0f0;
+      color: #555;
+      border-radius: 4px;
+      padding: 2px 7px;
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <button id="run">Run</button>
+    <button id="find" disabled>Find</button>
+  </div>
+  <div class="panels">
+    <div id="content" class="list"></div>
+    <div id="results" style="display:none" class="results">
+      <div class="results-heading">Results</div>
+      <div id="results-list"></div>
+    </div>
+  </div>
+
+  <script>
+    // comp full name -> checkbox element
+    const checkboxMap = {};
+
+    document.getElementById('run').addEventListener('click', () => {
+      parent.postMessage({ pluginMessage: { type: 'run' } }, '*');
+    });
+
+    document.getElementById('find').addEventListener('click', () => {
+      const selected = Object.entries(checkboxMap)
+        .filter(([, cb]) => cb.checked)
+        .map(([name]) => name);
+
+      if (selected.length === 0) return;
+
+      parent.postMessage({ pluginMessage: { type: 'find', componentNames: selected } }, '*');
+    });
+
+    function updateFindButton() {
+      const anyChecked = Object.values(checkboxMap).some(cb => cb.checked);
+      document.getElementById('find').disabled = !anyChecked;
+    }
+
+    window.onmessage = (event) => {
+      const msg = event.data.pluginMessage;
+      if (!msg) return;
+
+      const content = document.getElementById('content');
+
+      if (msg.type === 'error') {
+        content.innerHTML = `<div class="error">${msg.message}</div>`;
+        return;
+      }
+
+      if (msg.type === 'components') {
+        const components = msg.components;
+
+        // Clear old state
+        Object.keys(checkboxMap).forEach(k => delete checkboxMap[k]);
+        document.getElementById('results').style.display = 'none';
+        document.getElementById('find').disabled = true;
+
+        if (components.length === 0) {
+          content.innerHTML = `<div class="empty">Компоненты не найдены</div>`;
+          return;
+        }
+
+        const list = document.createElement('div');
+
+        const groups = {};
+        components.forEach((comp) => {
+          const group = comp.name.includes('/') ? comp.name.split('/')[0].trim() : '—';
+          if (!groups[group]) groups[group] = [];
+          groups[group].push(comp);
+        });
+
+        let i = 0;
+        Object.keys(groups).sort().forEach((group) => {
+          const heading = document.createElement('div');
+          heading.className = 'group-heading';
+          heading.textContent = group;
+          list.appendChild(heading);
+
+          groups[group].forEach((comp) => {
+            const item = document.createElement('div');
+            item.className = 'item';
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.id = `comp-${i}`;
+            checkbox.value = comp.name;
+            checkbox.addEventListener('change', updateFindButton);
+
+            checkboxMap[comp.name] = checkbox;
+
+            const label = document.createElement('label');
+            label.htmlFor = `comp-${i}`;
+            label.textContent = comp.name.includes('/') ? comp.name.split('/').slice(1).join('/').trim() : comp.name;
+            label.title = comp.name;
+
+            item.appendChild(checkbox);
+            item.appendChild(label);
+            list.appendChild(item);
+            i++;
+          });
+        });
+
+        content.innerHTML = '';
+        content.appendChild(list);
+      }
+
+      if (msg.type === 'find-result') {
+        const summary = msg.summary;
+        const resultsList = document.getElementById('results-list');
+        resultsList.innerHTML = '';
+
+        const frameNames = Object.keys(summary);
+        if (frameNames.length === 0) {
+          resultsList.innerHTML = '<div class="empty">Ничего не найдено</div>';
+          document.getElementById('results').style.display = 'block';
+          return;
+        }
+
+        frameNames.sort().forEach(frameName => {
+          const comps = summary[frameName];
+
+          // заголовок — фрейм первого уровня
+          const heading = document.createElement('div');
+          heading.className = 'results-heading';
+          heading.textContent = frameName;
+          resultsList.appendChild(heading);
+
+          // строки — компонент + количество
+          Object.entries(comps).forEach(([compName, count]) => {
+            const row = document.createElement('div');
+            row.className = 'result-row';
+
+            const nameEl = document.createElement('div');
+            nameEl.className = 'result-name';
+            nameEl.textContent = compName;
+            nameEl.title = compName;
+
+            const countEl = document.createElement('div');
+            countEl.className = 'result-count';
+            countEl.textContent = count;
+
+            row.appendChild(nameEl);
+            row.appendChild(countEl);
+            resultsList.appendChild(row);
+          });
+        });
+
+        document.getElementById('results').style.display = 'block';
+      }
+    };
+  </script>
+</body>
+</html>
