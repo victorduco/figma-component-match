@@ -43,6 +43,18 @@
     button:active { background: #0a7ecb; }
     button:disabled { background: #c4c4c4; cursor: default; }
 
+    #replace { background: #1bc47d; }
+    #replace:hover { background: #17a86a; }
+    #replace:active { background: #129057; }
+    #replace:disabled { background: #c4c4c4; }
+
+    .replace-result {
+      padding: 8px 12px;
+      color: #1bc47d;
+      font-weight: 600;
+      font-size: 12px;
+    }
+
     .error {
       padding: 12px;
       color: #f24822;
@@ -171,6 +183,7 @@
   <div class="toolbar">
     <button id="run">Run</button>
     <button id="find" disabled>Find</button>
+    <button id="replace" disabled>Replace</button>
   </div>
   <div class="panels">
     <div id="content" class="list"></div>
@@ -183,6 +196,8 @@
   <script>
     // comp full name -> checkbox element
     const checkboxMap = {};
+    // comp full name -> component id (from Components page)
+    const idMap = {};
 
     document.getElementById('run').addEventListener('click', () => {
       parent.postMessage({ pluginMessage: { type: 'run' } }, '*');
@@ -192,15 +207,24 @@
       const selected = Object.entries(checkboxMap)
         .filter(([, cb]) => cb.checked)
         .map(([name]) => name);
-
       if (selected.length === 0) return;
-
+      document.getElementById('replace').disabled = true;
       parent.postMessage({ pluginMessage: { type: 'find', componentNames: selected } }, '*');
+    });
+
+    document.getElementById('replace').addEventListener('click', () => {
+      const nameToId = {};
+      Object.entries(checkboxMap)
+        .filter(([, cb]) => cb.checked)
+        .forEach(([name]) => { nameToId[name] = idMap[name]; });
+      if (Object.keys(nameToId).length === 0) return;
+      parent.postMessage({ pluginMessage: { type: 'replace', nameToId } }, '*');
     });
 
     function updateFindButton() {
       const anyChecked = Object.values(checkboxMap).some(cb => cb.checked);
       document.getElementById('find').disabled = !anyChecked;
+      document.getElementById('replace').disabled = true;
     }
 
     window.onmessage = (event) => {
@@ -219,8 +243,10 @@
 
         // Clear old state
         Object.keys(checkboxMap).forEach(k => delete checkboxMap[k]);
+        Object.keys(idMap).forEach(k => delete idMap[k]);
         document.getElementById('results').style.display = 'none';
         document.getElementById('find').disabled = true;
+        document.getElementById('replace').disabled = true;
 
         if (components.length === 0) {
           content.innerHTML = `<div class="empty">Компоненты не найдены</div>`;
@@ -254,6 +280,7 @@
             checkbox.addEventListener('change', updateFindButton);
 
             checkboxMap[comp.name] = checkbox;
+            idMap[comp.name] = comp.id;
 
             const label = document.createElement('label');
             label.htmlFor = `comp-${i}`;
@@ -313,6 +340,16 @@
         });
 
         document.getElementById('results').style.display = 'block';
+        document.getElementById('replace').disabled = frameNames.length === 0;
+      }
+
+      if (msg.type === 'replace-result') {
+        const resultsList = document.getElementById('results-list');
+        const row = document.createElement('div');
+        row.className = 'replace-result';
+        row.textContent = `Replaced: ${msg.replaced}`;
+        resultsList.prepend(row);
+        document.getElementById('replace').disabled = true;
       }
     };
   </script>
