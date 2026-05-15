@@ -48,6 +48,29 @@
     #replace:active { background: #129057; }
     #replace:disabled { background: #c4c4c4; }
 
+    .toolbar2 {
+      padding: 8px 12px 10px;
+      border-bottom: 1px solid #e5e5e5;
+      flex-shrink: 0;
+    }
+
+    #wrap-in-section { background: #f5a623; width: 100%; }
+    #wrap-in-section:hover { background: #e0941a; }
+    #wrap-in-section:active { background: #c97f10; }
+
+    .node-type-badge {
+      padding: 6px 12px;
+      font-size: 12px;
+      color: #555;
+      border-bottom: 1px solid #e5e5e5;
+      flex-shrink: 0;
+    }
+
+    .node-type-badge span {
+      font-weight: 600;
+      color: #6c47fb;
+    }
+
     .replace-result {
       padding: 8px 12px;
       color: #1bc47d;
@@ -185,6 +208,12 @@
     <button id="find" disabled>Find</button>
     <button id="replace" disabled>Replace</button>
   </div>
+  <div class="toolbar2">
+    <button id="wrap-in-section">Wrap in Template Section</button>
+  </div>
+  <div id="node-type-badge" class="node-type-badge" style="display:none">
+    Node type: <span id="node-type-value"></span>
+  </div>
   <div class="panels">
     <div id="content" class="list"></div>
     <div id="results" style="display:none" class="results">
@@ -210,6 +239,10 @@
       if (selected.length === 0) return;
       document.getElementById('replace').disabled = true;
       parent.postMessage({ pluginMessage: { type: 'find', componentNames: selected } }, '*');
+    });
+
+    document.getElementById('wrap-in-section').addEventListener('click', () => {
+      parent.postMessage({ pluginMessage: { type: 'wrap-in-section' } }, '*');
     });
 
     document.getElementById('replace').addEventListener('click', () => {
@@ -249,7 +282,7 @@
         document.getElementById('replace').disabled = true;
 
         if (components.length === 0) {
-          content.innerHTML = `<div class="empty">Компоненты не найдены</div>`;
+          content.innerHTML = `<div class="empty">No components found</div>`;
           return;
         }
 
@@ -305,7 +338,7 @@
 
         const frameNames = Object.keys(summary);
         if (frameNames.length === 0) {
-          resultsList.innerHTML = '<div class="empty">Ничего не найдено</div>';
+          resultsList.innerHTML = '<div class="empty">Nothing found</div>';
           document.getElementById('results').style.display = 'block';
           return;
         }
@@ -313,13 +346,13 @@
         frameNames.sort().forEach(frameName => {
           const comps = summary[frameName];
 
-          // заголовок — фрейм первого уровня
+          // top-level frame heading
           const heading = document.createElement('div');
           heading.className = 'results-heading';
           heading.textContent = frameName;
           resultsList.appendChild(heading);
 
-          // строки — компонент + количество
+          // component rows with count
           Object.entries(comps).forEach(([compName, count]) => {
             const row = document.createElement('div');
             row.className = 'result-row';
@@ -341,6 +374,27 @@
 
         document.getElementById('results').style.display = 'block';
         document.getElementById('replace').disabled = frameNames.length === 0;
+      }
+
+      if (msg.type === 'node-type-result') {
+        const badge = document.getElementById('node-type-badge');
+        const val = document.getElementById('node-type-value');
+        if (!msg.nodeType) {
+          val.textContent = 'nothing selected';
+          badge.style.display = 'block';
+          return;
+        }
+        let label = msg.nodeType;
+        if (msg.cornerRadius !== null) {
+          const cr = msg.cornerRadius;
+          const crStr = Array.isArray(cr)
+            ? `${cr[0]} / ${cr[1]} / ${cr[2]} / ${cr[3]}`
+            : String(cr);
+          label += ` · r: ${crStr}`;
+        }
+        val.textContent = label;
+        badge.style.display = 'block';
+        return;
       }
 
       if (msg.type === 'replace-result') {

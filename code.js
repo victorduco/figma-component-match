@@ -28,7 +28,7 @@ figma.ui.onmessage = async (msg) => {
   if (msg.type === 'run') {
     const page = figma.root.children.find(p => p.name === 'Components');
     if (!page) {
-      figma.ui.postMessage({ type: 'error', message: 'Страница "Components" не найдена' });
+      figma.ui.postMessage({ type: 'error', message: 'Page "Components" not found' });
       return;
     }
     const components = findAllComponents(page);
@@ -60,6 +60,84 @@ figma.ui.onmessage = async (msg) => {
     }
 
     figma.ui.postMessage({ type: 'find-result', summary });
+  }
+
+  if (msg.type === 'wrap-in-section') {
+    const sel = figma.currentPage.selection;
+    if (sel.length === 0) {
+      figma.notify('Select nodes to wrap');
+      return;
+    }
+
+    // Найти ноду "Template Section" на текущей странице
+    const template = figma.currentPage.findOne(n => n.name === 'Template Section');
+    if (!template) {
+      figma.notify('"Template Section" node not found on current page');
+      return;
+    }
+
+    // Запомнить позицию первой ноды до перемещения
+    let minX = Infinity, minY = Infinity;
+    for (const node of sel) {
+      minX = Math.min(minX, node.x);
+      minY = Math.min(minY, node.y);
+    }
+
+    // Клонировать шаблон и сразу поставить на место
+    const section = template.clone();
+    section.name = 'Section';
+    section.x = minX;
+    section.y = minY;
+
+    // Переместить ноды внутрь секции с абсолютным позиционированием
+    if (section.type === 'FRAME') {
+      section.layoutMode = 'NONE';
+    }
+
+    for (const node of sel) {
+      const absX = node.absoluteBoundingBox.x;
+      const absY = node.absoluteBoundingBox.y;
+      section.appendChild(node);
+      node.x = absX - section.x;
+      node.y = absY - section.y;
+    }
+
+    // Считаем bounding box детей внутри секции
+    const PAD = 64;
+    let cMinX = Infinity, cMinY = Infinity, cMaxX = -Infinity, cMaxY = -Infinity;
+    for (const child of section.children) {
+      cMinX = Math.min(cMinX, child.x);
+      cMinY = Math.min(cMinY, child.y);
+      cMaxX = Math.max(cMaxX, child.x + child.width);
+      cMaxY = Math.max(cMaxY, child.y + child.height);
+    }
+
+    // Сдвигаем детей чтобы паддинг был сверху и слева
+    for (const child of section.children) {
+      child.x = child.x - cMinX + PAD;
+      child.y = child.y - cMinY + PAD;
+    }
+
+    // Ресайз секции под контент + паддинги
+    const contentW = cMaxX - cMinX;
+    const contentH = cMaxY - cMinY;
+    const EXTRA = 600;
+    const totalW = contentW + PAD * 2 + EXTRA;
+    const totalH = contentH + PAD * 2 + EXTRA;
+    section.resizeWithoutConstraints(totalW, totalH);
+
+    // Сдвигаем секцию так чтобы контент оказался по центру
+    section.x -= EXTRA / 2;
+    section.y -= EXTRA / 2;
+
+    // Компенсируем сдвиг для детей
+    for (const child of section.children) {
+      child.x += EXTRA / 2;
+      child.y += EXTRA / 2;
+    }
+
+    figma.currentPage.selection = [section];
+    figma.viewport.scrollAndZoomIntoView([section]);
   }
 
   if (msg.type === 'replace') {
